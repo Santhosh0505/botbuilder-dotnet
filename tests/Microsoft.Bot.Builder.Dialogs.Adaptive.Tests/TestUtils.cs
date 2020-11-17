@@ -7,11 +7,9 @@ using System.Threading.Tasks;
 using Microsoft.Bot.Builder.Dialogs.Adaptive.Testing;
 using Microsoft.Bot.Builder.Dialogs.Declarative.Resources;
 using Microsoft.Extensions.Configuration;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Tests
 {
-    [TestClass]
     public class TestUtils
     {
         public static IConfiguration DefaultConfiguration { get; set; } = new ConfigurationBuilder().AddInMemoryCollection().Build();
@@ -24,12 +22,12 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Tests
             return Directory.EnumerateFiles(testFolder, "*.test.dialog", SearchOption.AllDirectories).Select(s => new object[] { Path.GetFileName(s) }).ToArray();
         }
 
-        public static async Task RunTestScript(ResourceExplorer resourceExplorer, string resourceId = null, IConfiguration configuration = null, [CallerMemberName] string testName = null)
+        public static async Task RunTestScript(ResourceExplorer resourceExplorer, string resourceId = null, IConfiguration configuration = null, [CallerMemberName] string testName = null, IEnumerable<IMiddleware> middlweare = null)
         {
             var script = resourceExplorer.LoadType<TestScript>(resourceId ?? $"{testName}.test.dialog");
             script.Configuration = configuration ?? new ConfigurationBuilder().AddInMemoryCollection().Build();
             script.Description = script.Description ?? resourceId;
-            await script.ExecuteAsync(testName: testName, resourceExplorer: resourceExplorer).ConfigureAwait(false);
+            await script.ExecuteAsync(testName: testName, resourceExplorer: resourceExplorer, middlweare: middlweare).ConfigureAwait(false);
         }
 
         public static string GetProjectPath()

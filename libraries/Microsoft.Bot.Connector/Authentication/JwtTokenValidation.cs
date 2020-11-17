@@ -62,22 +62,28 @@ namespace Microsoft.Bot.Connector.Authentication
             if (string.IsNullOrWhiteSpace(authHeader))
             {
                 var isAuthDisabled = await credentials.IsAuthenticationDisabledAsync().ConfigureAwait(false);
-                if (isAuthDisabled)
+                if (!isAuthDisabled)
                 {
-                    // In the scenario where Auth is disabled, we still want to have the
-                    // IsAuthenticated flag set in the ClaimsIdentity. To do this requires
-                    // adding in an empty claim.
-                    return new ClaimsIdentity(new List<Claim>(), "anonymous");
+                    // No Auth Header and Auth is required. Request is not authorized.
+                    throw new UnauthorizedAccessException();
                 }
 
-                // No Auth Header. Auth is required. Request is not authorized.
-                throw new UnauthorizedAccessException();
+                // Check if the activity is for a skill call and is coming from the Emulator.
+                if (activity.ChannelId == Channels.Emulator && activity.Recipient?.Role == RoleTypes.Skill)
+                {
+                    // Return an anonymous claim with an anonymous skill AppId
+                    return SkillValidation.CreateAnonymousSkillClaim();
+                }
+
+                // In the scenario where Auth is disabled, we still want to have the
+                // IsAuthenticated flag set in the ClaimsIdentity. To do this requires
+                // adding in an empty claim.
+                return new ClaimsIdentity(new List<Claim>(), AuthenticationConstants.AnonymousAuthType);
             }
 
+            // Validate the header and extract claims.
             var claimsIdentity = await ValidateAuthHeader(authHeader, credentials, provider, activity.ChannelId, authConfig, activity.ServiceUrl, httpClient ?? _httpClient).ConfigureAwait(false);
-
             AppCredentials.TrustServiceUrl(activity.ServiceUrl);
-
             return claimsIdentity;
         }
 
@@ -183,7 +189,7 @@ namespace Microsoft.Bot.Connector.Authentication
         /// <param name="authConfig">An <see cref="AuthenticationConfiguration"/> instance.</param>
         /// <param name="claims">The list of claims to validate.</param>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-        /// <exception cref="UnauthorizedAccessException">If the validation returns false.</exception>
+        /// <exception cref="UnauthorizedAccessException">If the validation returns false, or ClaimsValidator is null and this is a skill claim.</exception>
         internal static async Task ValidateClaimsAsync(AuthenticationConfiguration authConfig, IEnumerable<Claim> claims)
         {
             if (authConfig.ClaimsValidator != null)
@@ -191,6 +197,10 @@ namespace Microsoft.Bot.Connector.Authentication
                 // Call the validation method if defined (it should throw an exception if the validation fails)
                 var claimsList = claims as IList<Claim> ?? claims.ToList();
                 await authConfig.ClaimsValidator.ValidateClaimsAsync(claimsList).ConfigureAwait(false);
+            }
+            else if (SkillValidation.IsSkillClaim(claims))
+            {
+                throw new UnauthorizedAccessException("ClaimsValidator is required for validation of Skill Host calls.");
             }
         }
 

@@ -6,32 +6,43 @@
 name: $(Build.BuildId)
 
 pool:
-  vmImage: 'windows-2019'
+  vmImage: $[ coalesce( variables['VMImage'], 'windows-2019' ) ] # or 'windows-latest' or 'vs2017-win2016'
 
 trigger: # ci trigger
   batch: true
   branches:
     include:
-     - master
+    - main
   paths:
     include:
-      - '*'
+    - '*'
     exclude:
-      - doc/
-      - specs/
-      - Changes.md
-      - LICENSE
-      - README.md
-      - UsingMyGet.md
+    - doc/
+    - specs/
+    - Changes.md
+    - LICENSE
+    - README.md
+    - UsingMyGet.md
 
-pr: none # no pr trigger
+pr: # pr trigger
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - build/yaml/botbuilder-dotnet-functional-test-windows.yml
 
 variables:
-  ReleasePackageVersion: 4.8.0-preview-$(Build.BuildNumber)
-  MSBuildArguments: -p:SignAssembly=false -p:delaySign=false -p:RunAnalyzersDuringBuild=false
+  AppId: $(WinTestBotAppId)
+  AppSecret: $(WinTestBotAppSecret)
+  BotGroup: $(WinTestBotBotGroup)
+  BotName: $(WinTestBotBotName)
   BuildPlatform: 'any cpu'
   BuildConfiguration: 'Release'
+  MSBuildArguments: -p:SignAssembly=false -p:delaySign=false -p:RunAnalyzersDuringBuild=false
   Parameters.solution: Microsoft.Bot.Builder.sln
+  runCodesignValidationInjection: false # Disables unnecessary CodeSign Validation step  
+  skipComponentGovernanceDetection: true # Disables unnecessary Component Governanace Detection step 
   SolutionDir: $(System.DefaultWorkingDirectory) # Consumed in dotnet publish by Directory.Build.props and a few test projects.
 #  AzureSubscription: define this in Azure
 #  DeleteResourceGroup: (optional) define this in Azure. Default = true.
@@ -41,7 +52,8 @@ variables:
 #  WinTestBotBotName: define this in Azure
 
 steps:
-- template: ci-build-steps.yml
+- powershell: 'gci env:* | sort-object name | Format-Table -AutoSize -Wrap'
+  displayName: 'Display env vars'
 
 - task: DotNetCoreCLI@2
   displayName: 'Dotnet Publish TestBot'
@@ -49,45 +61,92 @@ steps:
     command: publish
     publishWebProjects: false
     projects: '$(System.DefaultWorkingDirectory)\tests\Microsoft.Bot.Builder.TestBot\Microsoft.Bot.Builder.TestBot.csproj'
-    arguments: '--output $(System.DefaultWorkingDirectory)\tests\Microsoft.Bot.Builder.TestBot\publishedbot -p:TreatWarningsAsErrors=false'
+    arguments: '--configuration $(BuildConfiguration) --output $(System.DefaultWorkingDirectory)\tests\Microsoft.Bot.Builder.TestBot\publishedbot -p:TreatWarningsAsErrors=false'
     modifyOutputPath: false
 
+- task: AzureCLI@2
+  displayName: 'Preexisting RG: create Azure resources. Runs in even builds.'
+  inputs:
+    azureSubscription: $(AzureSubscription)
+    scriptType: ps
+    scriptLocation: inlineScript
+    inlineScript: |
+     Write-Host "`n***** Creating Azure resources using the preexisting-rg template *****";
+     Write-Host "This task runs for even-numbered builds. Build ID = $(Build.BuildId)";
+     Write-Host "************************************************************************";
+     Set-PSDebug -Trace 1;
+     az group create --location westus --name $(BotGroup);
+     
+     # set up bot channels registration, app service, app service plan
+     az deployment group create --resource-group "$(BotGroup)" --template-file "$(System.DefaultWorkingDirectory)\FunctionalTests\ExportedTemplate\template-with-preexisting-rg.json" --parameters appId=$(AppId) appSecret="$(AppSecret)" botId="$(BotName)" botSku=F0 newAppServicePlanName="$(BotName)" newWebAppName="$(BotName)" appServicePlanLocation="westus" --name "$(BotName)"
+     Set-PSDebug -Trace 0;
+  condition: and(succeeded(), or( endsWith(variables['Build.BuildId'], 0), endsWith(variables['Build.BuildId'], 2), endsWith(variables['Build.BuildId'], 4), endsWith(variables['Build.BuildId'], 6), endsWith(variables['Build.BuildId'], 8)))
+
+- task: AzureCLI@2
+  displayName: 'New RG: create Azure resources. Runs in odd builds.'
+  inputs:
+    azureSubscription: $(AzureSubscription)
+    scriptType: ps
+    scriptLocation: inlineScript
+    inlineScript: |
+     Write-Host "`n***** Creating Azure resources using the new-rg template *****";
+     Write-Host "This task runs for odd-numbered builds. Build ID = $(Build.BuildId)";
+     Write-Host "****************************************************************";
+     Set-PSDebug -Trace 1;
+     
+     # set up resource group, bot channels registration, app service, app service plan
+     az deployment sub create --name "$(BotGroup)" --template-file "$(System.DefaultWorkingDirectory)\FunctionalTests\ExportedTemplate\template-with-new-rg.json" --location "westus" --parameters appId=$(AppId) appSecret="$(AppSecret)" botId="$(BotName)" botSku=F0 newAppServicePlanName="$(BotName)" newAppServicePlanLocation="westus" newWebAppName="$(BotName)" groupName="$(BotGroup)" groupLocation="westus"
+     Set-PSDebug -Trace 0;
+  condition: and(succeeded(), or( endsWith(variables['Build.BuildId'], 1), endsWith(variables['Build.BuildId'], 3), endsWith(variables['Build.BuildId'], 5), endsWith(variables['Build.BuildId'], 7), endsWith(variables['Build.BuildId'], 9)))
+
 - task: AzureCLI@1
-  displayName: 'Create resources, deploy bot, create DirectLine channel'
+  displayName: 'Create resources'
   inputs:
     azureSubscription: $(AzureSubscription)
     scriptLocation: inlineScript
     inlineScript: |
-     call az group create --location westus --name $(WinTestBotBotGroup)
-     call az deployment group create --resource-group "$(WinTestBotBotGroup)" --template-file "$(System.DefaultWorkingDirectory)\FunctionalTests\ExportedTemplate\template-with-preexisting-rg.json" --parameters appId=$(WinTestBotAppId) appSecret="$(WinTestBotAppSecret)" botId="$(WinTestBotBotName)" botSku=F0 newAppServicePlanName="$(WinTestBotBotName)" newWebAppName="$(WinTestBotBotName)" appServicePlanLocation="westus" --name "$(WinTestBotBotName)"
-     call az webapp deployment source config-zip --resource-group "$(WinTestBotBotGroup)" --name "$(WinTestBotBotName)" --src "$(System.DefaultWorkingDirectory)\tests\Microsoft.Bot.Builder.TestBot\publishedbot\PublishedBot.zip"
-     call az bot directline create -n "$(WinTestBotBotName)" -g "$(WinTestBotBotGroup)" > "$(System.DefaultWorkingDirectory)\DirectLineCreate.json"
+     :: Comment out either Option 1 or Option 2 below. Ultimately, both templates should be exercised to ensure they continue to work.
+     
+     :: Option 1: Use the "new-rg" template:
+     call az deployment sub create --name "$(BotGroup)" --template-file "$(System.DefaultWorkingDirectory)\FunctionalTests\ExportedTemplate\template-with-new-rg.json" --location "westus" --parameters appId=$(AppId) appSecret="$(AppSecret)" botId="$(BotName)" botSku=F0 newAppServicePlanName="$(BotName)" newAppServicePlanLocation="westus" newWebAppName="$(BotName)" groupName="$(BotGroup)" groupLocation="westus"
+     
+     :: Option 2: Use the "preexisting-rg" template:
+     ::call az group create --location westus --name $(BotGroup)
+     ::call az deployment group create --resource-group "$(BotGroup)" --template-file "$(System.DefaultWorkingDirectory)\FunctionalTests\ExportedTemplate\template-with-preexisting-rg.json" --parameters appId=$(AppId) appSecret="$(AppSecret)" botId="$(BotName)" botSku=F0 newAppServicePlanName="$(BotName)" newWebAppName="$(BotName)" appServicePlanLocation="westus" --name "$(BotName)"
+
+- task: AzureCLI@1
+  displayName: 'Deploy the bot, create DirectLine channel'
+  inputs:
+    azureSubscription: $(AzureSubscription)
+    scriptLocation: inlineScript
+    inlineScript: |
+     call az webapp deployment source config-zip --resource-group "$(BotGroup)" --name "$(BotName)" --src "$(System.DefaultWorkingDirectory)\tests\Microsoft.Bot.Builder.TestBot\publishedbot\PublishedBot.zip"
+     call az bot directline create -n "$(BotName)" -g "$(BotGroup)" > "$(System.DefaultWorkingDirectory)\DirectLineCreate.json"
 
 - powershell: |
    $json = Get-Content '$(System.DefaultWorkingDirectory)\DirectLineCreate.json' | Out-String | ConvertFrom-Json
    $key = $json.properties.properties.sites.key
    echo "##vso[task.setvariable variable=DIRECTLINE;]$key"
-   echo "##vso[task.setvariable variable=BOTID;]$(WinTestBotBotName)"
+   echo "##vso[task.setvariable variable=BOTID;]$(BotName)"
    Write-Host "DIRECTLINE=$key";
-   Write-Host "BOTID=$(WinTestBotBotName)";
-  displayName: 'Set up directline keys'
+   Write-Host "BOTID=$(BotName)";
+  displayName: 'Set directline key for test'
 
 - task: DotNetCoreCLI@2
   displayName: 'dotnet test'
   inputs:
     command: test
-    projects: |
-     **/**Tests.csproj
-     !**/Microsoft.Bot.Builder.Classic.Tests.csproj
-     !**/Microsoft.Bot.ApplicationInsights.WebApi.Tests.csproj
-     !**/Microsoft.Bot.Builder.Integration.AspNet.WebApi.Tests.csproj
-    arguments: '-v n --configuration $(BuildConfiguration) --no-build --no-restore --filter "TestCategory=FunctionalTests&TestCategory!=Adapters"'
+    projects: '$(System.DefaultWorkingDirectory)\FunctionalTests\**\*FunctionalTests.csproj'
+    arguments: '-v n --configuration $(BuildConfiguration) --filter "TestCategory=FunctionalTests&TestCategory!=Adapters"'
     workingDirectory: tests
+  env:
+    TestAppId: $(WinTestBotAppId)
+    TestPassword: $(WinTestBotAppSecret)
 
 - task: AzureCLI@1
   displayName: 'Delete Resources'
   inputs:
     azureSubscription: $(AzureSubscription)
     scriptLocation: inlineScript
-    inlineScript: 'call az group delete -n "$(WinTestBotBotGroup)" --yes'
+    inlineScript: 'call az group delete -n "$(BotGroup)" --yes'
   condition: and(always(), ne(variables['DeleteResourceGroup'], 'false'))

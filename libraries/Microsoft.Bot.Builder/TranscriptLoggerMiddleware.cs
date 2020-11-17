@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Bot.Schema;
@@ -17,7 +16,7 @@ namespace Microsoft.Bot.Builder
     /// </summary>
     public class TranscriptLoggerMiddleware : IMiddleware
     {
-        private static readonly JsonSerializerSettings _jsonSettings = new JsonSerializerSettings() { NullValueHandling = NullValueHandling.Ignore };
+        private static readonly JsonSerializerSettings _jsonSettings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
         private readonly ITranscriptLogger _logger;
 
         /// <summary>
@@ -41,22 +40,23 @@ namespace Microsoft.Bot.Builder
         /// <seealso cref="Bot.Schema.IActivity"/>
         public async Task OnTurnAsync(ITurnContext turnContext, NextDelegate nextTurn, CancellationToken cancellationToken)
         {
-            Queue<IActivity> transcript = new Queue<IActivity>();
+            var transcript = new Queue<IActivity>();
 
             // log incoming activity at beginning of turn
             if (turnContext.Activity != null)
             {
-                if (turnContext.Activity.From == null)
-                {
-                    turnContext.Activity.From = new ChannelAccount();
-                }
+                turnContext.Activity.From ??= new ChannelAccount();
 
                 if (string.IsNullOrEmpty((string)turnContext.Activity.From.Properties["role"]))
                 {
                     turnContext.Activity.From.Properties["role"] = "user";
                 }
 
-                LogActivity(transcript, CloneActivity(turnContext.Activity));
+                // We should not log ContinueConversation events used by skills to initialize the middleware.
+                if (!(turnContext.Activity.Type == ActivityTypes.Event && turnContext.Activity.Name == ActivityEventNames.ContinueConversation))
+                {
+                    LogActivity(transcript, CloneActivity(turnContext.Activity));
+                }
             }
 
             // hook up onSend pipeline
@@ -95,12 +95,12 @@ namespace Microsoft.Bot.Builder
                 // add MessageDelete activity
                 // log as MessageDelete activity
                 var deleteActivity = new Activity
-                {
-                    Type = ActivityTypes.MessageDelete,
-                    Id = reference.ActivityId,
-                }
-                .ApplyConversationReference(reference, isIncoming: false)
-                .AsMessageDeleteActivity();
+                    {
+                        Type = ActivityTypes.MessageDelete,
+                        Id = reference.ActivityId,
+                    }
+                    .ApplyConversationReference(reference, isIncoming: false)
+                    .AsMessageDeleteActivity();
 
                 LogActivity(transcript, deleteActivity);
             });
@@ -109,28 +109,23 @@ namespace Microsoft.Bot.Builder
             await nextTurn(cancellationToken).ConfigureAwait(false);
 
             // flush transcript at end of turn
-            var logTasks = new List<Task>();
-            while (transcript.Count > 0)
-            {
-                // Process the queue and log all the activities in parallel.
-                var activity = transcript.Dequeue();
-
-                // Add the logging task to the list (we don't call await here, we await all the calls together later).
-                logTasks.Add(TryLogActivityAsync(_logger, activity));
-            }
-
-            if (logTasks.Any())
-            {
-                // Wait for all the activities to be logged before continuing.
-                await Task.WhenAll(logTasks).ConfigureAwait(false);
-            }
+            // NOTE: We are not awaiting this task by design, TryLogTranscriptAsync() observes all exceptions and we don't need to or want to block execution on the completion.
+            _ = TryLogTranscriptAsync(_logger, transcript);
         }
 
-        private static async Task TryLogActivityAsync(ITranscriptLogger logger, IActivity activity)
+        /// <summary>
+        /// Helper to sequentially flush the transcript queue to the log.
+        /// </summary>
+        private static async Task TryLogTranscriptAsync(ITranscriptLogger logger, Queue<IActivity> transcript)
         {
             try
             {
-                await logger.LogActivityAsync(activity).ConfigureAwait(false);
+                while (transcript.Count > 0)
+                {
+                    // Process the queue and log all the activities in parallel.
+                    var activity = transcript.Dequeue();
+                    await logger.LogActivityAsync(activity).ConfigureAwait(false);
+                }
             }
 #pragma warning disable CA1031 // Do not catch general exception types (this should probably be addressed later, but for now we just log the error and continue the execution)
             catch (Exception ex)
@@ -157,7 +152,7 @@ namespace Microsoft.Bot.Builder
                 throw new ArgumentNullException(nameof(activity), "Cannot check or add Id on a null Activity.");
             }
 
-            if (activity.Id == null)
+            if (string.IsNullOrEmpty(activity.Id))
             {
                 var generatedId = $"g_{Guid.NewGuid()}";
                 activity.Id = generatedId;
@@ -168,11 +163,7 @@ namespace Microsoft.Bot.Builder
 
         private static void LogActivity(Queue<IActivity> transcript, IActivity activity)
         {
-            if (activity.Timestamp == null)
-            {
-                activity.Timestamp = DateTime.UtcNow;
-            }
-
+            activity.Timestamp ??= DateTime.UtcNow;
             transcript.Enqueue(activity);
         }
     }

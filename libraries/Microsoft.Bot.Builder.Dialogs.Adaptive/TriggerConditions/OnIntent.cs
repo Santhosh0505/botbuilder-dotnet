@@ -16,9 +16,21 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
     /// </summary>
     public class OnIntent : OnDialogEvent
     {
+        /// <summary>
+        /// Class identifier.
+        /// </summary>
         [JsonProperty("$kind")]
         public new const string Kind = "Microsoft.OnIntent";
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="OnIntent"/> class.
+        /// </summary>
+        /// <param name="intent">Optional, intent to match on.</param>
+        /// <param name="entities">Optional, entities which must be recognized for this rule to trigger.</param>
+        /// <param name="actions">Optional, actions to add to the plan when the rule constraints are met.</param>
+        /// <param name="condition">Optional, condition which needs to be met for the actions to be executed.</param>
+        /// <param name="callerPath">Optional, source file full path.</param>
+        /// <param name="callerLine">Optional, line number in source file.</param>
         [JsonConstructor]
         public OnIntent(string intent = null, List<string> entities = null, List<Dialog> actions = null, string condition = null, [CallerFilePath] string callerPath = "", [CallerLineNumber] int callerLine = 0)
             : base(
@@ -52,12 +64,17 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
         public List<string> Entities { get; set; }
 #pragma warning restore CA2227 // Collection properties should be read only
 
+        /// <summary>
+        /// Gets the identity for this rule's action.
+        /// </summary>
+        /// <returns>String with the identity.</returns>
         public override string GetIdentity()
         {
             return $"{this.GetType().Name}({this.Intent})[{string.Join(",", this.Entities)}]";
         }
 
-        public override Expression GetExpression()
+        /// <inheritdoc/>
+        protected override Expression CreateExpression()
         {
             // add constraints for the intents property
             if (string.IsNullOrEmpty(this.Intent))
@@ -83,9 +100,15 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
                     }).ToArray()));
             }
 
-            return Expression.AndExpression(intentExpression, base.GetExpression());
+            return Expression.AndExpression(intentExpression, base.CreateExpression());
         }
 
+        /// <summary>
+        /// Called when a change list is created.
+        /// </summary>
+        /// <param name="actionContext">Context to use for evaluation.</param>
+        /// <param name="dialogOptions">Optional, object with dialog options.</param>
+        /// <returns>An <see cref="ActionChangeList"/> with the list of actions.</returns>
         protected override ActionChangeList OnCreateChangeList(ActionContext actionContext, object dialogOptions = null)
         {
             var recognizerResult = actionContext.State.GetValue<RecognizerResult>($"{TurnPath.DialogEvent}.value");

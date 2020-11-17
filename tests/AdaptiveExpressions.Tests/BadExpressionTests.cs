@@ -109,7 +109,8 @@ namespace AdaptiveExpressions.Tests
             Test("greater(one)"), // greater need two parameters
             Test("greaterOrEquals(one, hello)"), // string and integer are not comparable
             Test("greaterOrEquals(one)"), // function need two parameters
-            Test("less(false, true)"), // string or number parameters are needed
+            Test("less(1, true)"), // should have rge same type
+            Test("less(json('{}'), [])"), // should be comparable
             Test("less(one, hello)"), // string and integer are not comparable
             Test("less(one)"), // function need two parameters
             Test("lessOrEquals(one, hello)"), // string and integer are not comparable
@@ -151,6 +152,7 @@ namespace AdaptiveExpressions.Tests
             Test("formatNumber(1,2.0)"), // the second parameter should be an integer
             Test("formatNumber(hello,2.0)"), // the first parameter should be a number
             Test("formatNumber(hello,2232131231231)"), // the first parameter should be a 32-bit signed integer
+            Test("jsonStringify(hello,2232131231231)"), // shoule have 1 param
             #endregion
 
             #region Math functions test
@@ -175,7 +177,6 @@ namespace AdaptiveExpressions.Tests
             Test("mod(5.5, 2)"), //  param should be integer
             Test("mod(5, 2.1)"), //  param should be integer
             Test("mod(5, 2.1 ,3)"), //  need two params
-            Test("rand(5, 6.1)"), //  param should be integer
             Test("rand(5)"), //  need two params
             Test("rand(7, 6)"), //  minvalue cannot be greater than maxValue
             Test("rand(21223123221322, 10)"), // the first parameter should be a 32-bit signed integer
@@ -332,6 +333,10 @@ namespace AdaptiveExpressions.Tests
             Test("getPreviousViableTime(hello)"), // should have a "XX:mm:ss" format string
             Test("getPreviousViableTime(one)"), // should have a string parameter
             Test("getPreviousViableTime('XX:12:12', 20)"), // should only have 1 parameter
+            Test("resolve(one)"), // should have string or TimexProperty arguments
+            Test("resolve('T14', 'Asia/Tokyo')"), // should only have one parameter
+            Test("resolve('12-20')"), // should have a valid TimexPropterty after parsing
+            Test("resolve('XXXX-WXX-6')"), // not a valid argument
             #endregion
 
             #region uri parsing function test
@@ -352,6 +357,8 @@ namespace AdaptiveExpressions.Tests
             Test("contains('hello world', 'hello', 'new')"), // should have 2 parameter
             Test("count(items, 1)"), // should have 1 parameter
             Test("count(1)"), // first param should be list or string
+            Test("reverse(items, 1)"), // should have 1 parameter
+            Test("reverse(1)"), // first param should be list or string
             Test("empty(1,2)"), // should have two params
             Test("first(items,2)"), // should have 1 param
             Test("last(items,2)"), // should have 1 param
@@ -381,12 +388,8 @@ namespace AdaptiveExpressions.Tests
             Test("union(one, two)"), // should have collection param
             Test("intersection(one, two)"), // should have collection param
             Test("skip(one, two)"), // should have collection param
-            Test("skip(items,-1)"), // the second parameter shoule not less than zero
-            Test("skip(items,3)"), // the second parameter shoule  less than the length of the collection
             Test("take(one, two)"), // should have collection param
             Test("take(createArray('H','e','l','l','0'),items[5])"), // the second param expr is wrong
-            Test("take(items,-1)"), // the second parameter shoule not less than zero
-            Test("take(items,4)"), // the second parameter shoule  less than the length of the collection
             Test("subArray(one,1,4)"), // should have collection param
             Test("subArray(items,-1,4)"), // the second parameter shoule not less than zero
             Test("subArray(items,1,4)"), // the second parameter shoule  less than the length of the collection

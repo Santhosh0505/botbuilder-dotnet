@@ -35,7 +35,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive
             }
 
             var list = new List<string>();
-            var entities = schema["$entities"]?.Value<JArray>();
+            var entities = schema["$entities"]?.Value<JArray>() ?? schema["items"]?["$entities"].Value<JArray>();
             if (entities != null)
             {
                 foreach (var entity in entities)
@@ -127,6 +127,10 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive
         /// </value>
         public IReadOnlyList<PropertySchema> Children { get; }
 
+        /// <summary>
+        /// Returns a string that represents the current object.
+        /// </summary>
+        /// <returns>A string that represents the current object.</returns>
         public override string ToString() => $"PropertySchema({Path})";
     }
 }

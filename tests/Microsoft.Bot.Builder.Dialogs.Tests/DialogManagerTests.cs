@@ -15,11 +15,10 @@ using Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions;
 using Microsoft.Bot.Builder.Skills;
 using Microsoft.Bot.Connector.Authentication;
 using Microsoft.Bot.Schema;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Xunit;
 
 namespace Microsoft.Bot.Builder.Dialogs.Tests
 {
-    [TestClass]
     public class DialogManagerTests
     {
         // An App ID for a parent bot.
@@ -60,9 +59,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
             LeafSkill
         }
 
-        public TestContext TestContext { get; set; }
-
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_ConversationState_PersistedAcrossTurns()
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -80,7 +77,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
             .StartTestAsync();
         }
 
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_AlternateProperty()
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -98,7 +95,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
             .StartTestAsync();
         }
 
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_ConversationState_ClearedAcrossConversations()
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -122,7 +119,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
             .StartTestAsync();
         }
 
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_UserState_PersistedAcrossConversations()
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -144,7 +141,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
             .StartTestAsync();
         }
 
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_UserState_NestedDialogs_PersistedAcrossConversations()
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -169,25 +166,25 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
             .StartTestAsync();
         }
 
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_OnErrorEvent_Leaf()
         {
             await TestUtilities.RunTestScript();
         }
 
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_OnErrorEvent_Parent()
         {
             await TestUtilities.RunTestScript();
         }
 
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_OnErrorEvent_Root()
         {
             await TestUtilities.RunTestScript();
         }
 
-        [TestMethod]
+        [Fact]
         public async Task DialogManager_DialogSet()
         {
             var storage = new MemoryStorage();
@@ -230,20 +227,128 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
             dm.Dialogs.Add(new SimpleDialog() { Id = "test" });
 
             await new TestFlow(adapter, async (turnContext, cancellationToken) =>
-                {
-                    await dm.OnTurnAsync(turnContext, cancellationToken: cancellationToken).ConfigureAwait(false);
-                })
+            {
+                await dm.OnTurnAsync(turnContext, cancellationToken: cancellationToken).ConfigureAwait(false);
+            })
                 .SendConversationUpdate()
                     .AssertReply("simple")
                     .AssertReply("simple")
                 .StartTestAsync();
         }
 
-        [TestMethod]
-        [DataRow(SkillFlowTestCase.RootBotOnly, false)]
-        [DataRow(SkillFlowTestCase.RootBotConsumingSkill, false)]
-        [DataRow(SkillFlowTestCase.MiddleSkill, true)]
-        [DataRow(SkillFlowTestCase.LeafSkill, true)]
+        [Fact]
+        public async Task DialogManager_ContainerRegistration()
+        {
+            var root = new AdaptiveDialog("root")
+            {
+                Triggers = new List<OnCondition>
+                {
+                    new OnBeginDialog()
+                    {
+                        Actions = new List<Dialog> { new AdaptiveDialog("inner") }
+                    }
+                } 
+            };
+
+            var storage = new MemoryStorage();
+            var convoState = new ConversationState(storage);
+            var userState = new UserState(storage);
+
+            var adapter = new TestAdapter();
+            adapter
+                .UseStorage(storage)
+                .UseBotState(userState, convoState);
+
+            // The inner adaptive dialog should be registered on the DialogManager after OnTurn
+            var dm = new DialogManager(root);
+            
+            await new TestFlow(adapter, async (turnContext, cancellationToken) =>
+            {
+                await dm.OnTurnAsync(turnContext, cancellationToken: cancellationToken).ConfigureAwait(false);
+            })
+                .SendConversationUpdate()
+                .StartTestAsync();
+
+            Assert.NotNull(dm.Dialogs.Find("inner"));
+        }
+
+        [Fact]
+        public async Task DialogManager_ContainerRegistration_DoubleNesting()
+        {
+            // Create the following dialog tree
+            // Root (adaptive) -> inner (adaptive) -> innerinner(adaptive) -> helloworld (SendActivity)
+            var root = new AdaptiveDialog("root")
+            {
+                Triggers = new List<OnCondition>
+                {
+                    new OnBeginDialog()
+                    {
+                        Actions = new List<Dialog> 
+                        { 
+                            new AdaptiveDialog("inner")
+                            {
+                                Triggers = new List<OnCondition>
+                                {
+                                    new OnBeginDialog()
+                                    {
+                                        Actions = new List<Dialog>
+                                        {
+                                            new AdaptiveDialog("innerinner")
+                                            { 
+                                                Triggers = new List<OnCondition>()
+                                                { 
+                                                    new OnBeginDialog()
+                                                    { 
+                                                        Actions = new List<Dialog>()
+                                                        { 
+                                                            new SendActivity("helloworld")
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            var storage = new MemoryStorage();
+            var convoState = new ConversationState(storage);
+            var userState = new UserState(storage);
+
+            var adapter = new TestAdapter();
+            adapter
+                .UseStorage(storage)
+                .UseBotState(userState, convoState);
+
+            // The inner adaptive dialog should be registered on the DialogManager after OnTurn
+            var dm = new DialogManager(root);
+
+            await new TestFlow(adapter, async (turnContext, cancellationToken) =>
+            {
+                await dm.OnTurnAsync(turnContext, cancellationToken: cancellationToken).ConfigureAwait(false);
+            })
+                .SendConversationUpdate()
+                .StartTestAsync();
+
+            // Top level containers should be registered
+            Assert.NotNull(dm.Dialogs.Find("inner"));
+
+            // Mid level containers should be registered
+            Assert.NotNull(dm.Dialogs.Find("innerinner"));
+
+            // Leaf nodes / non-contaners should not be registered
+            Assert.DoesNotContain(dm.Dialogs.GetDialogs(), d => d.GetType() == typeof(SendActivity));
+        }
+
+        [Theory]
+        [InlineData(SkillFlowTestCase.RootBotOnly, false)]
+        [InlineData(SkillFlowTestCase.RootBotConsumingSkill, false)]
+        [InlineData(SkillFlowTestCase.MiddleSkill, true)]
+        [InlineData(SkillFlowTestCase.LeafSkill, true)]
         public async Task HandlesBotAndSkillsTestCases(SkillFlowTestCase testCase, bool shouldSendEoc)
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -255,23 +360,23 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
                 .Send("SomeName")
                 .AssertReply("Hello SomeName, nice to meet you!")
                 .StartTestAsync();
-            
-            Assert.AreEqual(DialogTurnStatus.Complete, _dmTurnResult.TurnResult.Status);
+
+            Assert.Equal(DialogTurnStatus.Complete, _dmTurnResult.TurnResult.Status);
 
             if (shouldSendEoc)
             {
-                Assert.IsNotNull(_eocSent, "Skills should send EndConversation to channel");
-                Assert.AreEqual(ActivityTypes.EndOfConversation, _eocSent.Type);
-                Assert.AreEqual("SomeName", _eocSent.Value);
-                Assert.AreEqual("en-GB", _eocSent.Locale);
+                Assert.NotNull(_eocSent);
+                Assert.Equal(ActivityTypes.EndOfConversation, _eocSent.Type);
+                Assert.Equal("SomeName", _eocSent.Value);
+                Assert.Equal("en-GB", _eocSent.Locale);
             }
             else
             {
-                Assert.IsNull(_eocSent, "Root bot should not send EndConversation to channel");
+                Assert.Null(_eocSent);
             }
         }
 
-        [TestMethod]
+        [Fact]
         public async Task SkillHandlesEoCFromParent()
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -287,10 +392,10 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
                 .Send(eocActivity)
                 .StartTestAsync();
 
-            Assert.AreEqual(DialogTurnStatus.Cancelled, _dmTurnResult.TurnResult.Status);
+            Assert.Equal(DialogTurnStatus.Cancelled, _dmTurnResult.TurnResult.Status);
         }
 
-        [TestMethod]
+        [Fact]
         public async Task SkillHandlesRepromptFromParent()
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -307,10 +412,10 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
                 .AssertReply("Hello, what is your name?")
                 .StartTestAsync();
 
-            Assert.AreEqual(DialogTurnStatus.Waiting, _dmTurnResult.TurnResult.Status);
+            Assert.Equal(DialogTurnStatus.Waiting, _dmTurnResult.TurnResult.Status);
         }
 
-        [TestMethod]
+        [Fact]
         public async Task SkillShouldReturnEmptyOnRepromptWithNoDialog()
         {
             var firstConversationId = Guid.NewGuid().ToString();
@@ -324,7 +429,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Tests
                 .Send(repromptEvent)
                 .StartTestAsync();
 
-            Assert.AreEqual(DialogTurnStatus.Empty, _dmTurnResult.TurnResult.Status);
+            Assert.Equal(DialogTurnStatus.Empty, _dmTurnResult.TurnResult.Status);
         }
 
         private Dialog CreateTestDialog(string property)

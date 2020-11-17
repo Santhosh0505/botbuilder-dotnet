@@ -68,18 +68,18 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive
         public string Text { get; set; } = string.Empty;
 
         /// <summary>
-        /// Gets or sets the role the entity played in utterance.
-        /// </summary>
-        /// <value>Role of entity.</value>
-        [JsonProperty("role")]
-        public string Role { get; set; } = string.Empty;
-
-        /// <summary>
         /// Gets or sets type of entity.
         /// </summary>
         /// <value>Type of entity.</value>
         [JsonProperty("type")]
         public string Type { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets root entity where this entity was found.
+        /// </summary>
+        /// <value>Root entity name plus index.</value>
+        [JsonProperty("rootEntity")]
+        public string RootEntity { get; set; } = string.Empty;
 
         /// <summary>
         /// Gets or sets relative priority of entity compared to other entities with 0 being highest priority.
@@ -126,6 +126,26 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive
         public bool Covers(EntityInfo entity)
             => Start <= entity.Start && End >= entity.End && End - Start > entity.End - entity.Start;
 
+        /// <summary>
+        /// True if entities share the same root entity.
+        /// </summary>
+        /// <param name="entity">Entity to compare.</param>
+        /// <returns>True if entities share the same root.</returns>
+        public bool SharesRoot(EntityInfo entity)
+            => entity.RootEntity == RootEntity;
+
+        /// <summary>
+        /// True if entities are the same.
+        /// </summary>
+        /// <param name="entity">Entity to compare.</param>
+        /// <returns>True if entities are the same entity.</returns>
+        public bool IsSameEntity(EntityInfo entity)
+            => entity.SharesRoot(entity) && Alternative(entity);
+
+        /// <summary>
+        /// Returns a string that represents the current object.
+        /// </summary>
+        /// <returns>A string that represents the current object.</returns>
         public override string ToString()
             => $"{Operation}({Name}:{Value}) P{Priority} {Score} {Coverage}";
 

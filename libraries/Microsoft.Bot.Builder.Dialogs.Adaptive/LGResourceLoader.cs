@@ -15,6 +15,11 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Generators
     public class LGResourceLoader
 #pragma warning restore CA1052 // Static holder types should be Static or NotInheritable
     {
+        /// <summary>
+        /// Groups locales from a given resource path.
+        /// </summary>
+        /// <param name="resourceExplorer"><see cref="ResourceExplorer"/> for the path to group.</param>
+        /// <returns>Dictionary of grouped locale.</returns>
         public static Dictionary<string, IList<Resource>> GroupByLocale(ResourceExplorer resourceExplorer)
         {
             var resourceMapping = new Dictionary<string, IList<Resource>>();
@@ -130,7 +135,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Generators
                 return string.Empty;
             }
 
-            throw new Exception($"there is no locale fallback for {locale}");
+            throw new InvalidOperationException($"there is no locale fallback for {locale}");
         }
 
         /// <summary>

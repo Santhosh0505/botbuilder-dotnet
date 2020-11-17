@@ -153,6 +153,7 @@ namespace Microsoft.Bot.Builder.Integration.AspNet.Core
             activityClone.Conversation.Id = conversationId;
             activityClone.ServiceUrl = serviceUrl.ToString();
             activityClone.Recipient ??= new ChannelAccount();
+            activityClone.Recipient.Role = RoleTypes.Skill;
 
             return await SecurePostActivityAsync<T>(toUrl, activityClone, token, cancellationToken).ConfigureAwait(false);
         }
@@ -211,7 +212,15 @@ namespace Microsoft.Bot.Builder.Integration.AspNet.Core
 
         private static T GetBodyContent<T>(string content)
         {
-            return JsonConvert.DeserializeObject<T>(content);
+            try
+            {
+                return JsonConvert.DeserializeObject<T>(content);
+            }
+            catch (JsonException)
+            {
+                // This will only happen when the skill didn't return valid json in the content (e.g. when the status code is 500 or there's a bug in the skill)
+                return default;
+            }
         }
 
         private async Task<InvokeResponse<T>> SecurePostActivityAsync<T>(Uri toUrl, Activity activity, string token, CancellationToken cancellationToken)
@@ -228,7 +237,6 @@ namespace Microsoft.Bot.Builder.Integration.AspNet.Core
                     }
 
                     httpRequestMessage.Content = jsonContent;
-
                     using (var response = await HttpClient.SendAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false))
                     {
                         var content = response.Content != null ? await response.Content.ReadAsStringAsync().ConfigureAwait(false) : null;

@@ -24,6 +24,9 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
     [DebuggerDisplay("{GetIdentity()}")]
     public class OnCondition : IItemIdentity, IDialogDependencies
     {
+        /// <summary>
+        /// Class identifier.
+        /// </summary>
         [JsonProperty("$kind")]
         public const string Kind = "Microsoft.OnCondition";
 
@@ -35,6 +38,13 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
         // cached expression representing all constraints (constraint AND extraConstraints AND childrenConstraints)
         private Expression fullConstraint = null;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="OnCondition"/> class.
+        /// </summary>
+        /// <param name="condition">Optional, condition which needs to be met for the actions to be executed.</param>
+        /// <param name="actions">Optional, actions to add to the plan when the rule constraints are met.</param>
+        /// <param name="callerPath">Optional, source file full path.</param>
+        /// <param name="callerLine">Optional, line number in source file.</param>
         [JsonConstructor]
         public OnCondition(string condition = null, List<Dialog> actions = null, [CallerFilePath] string callerPath = "", [CallerLineNumber] int callerLine = 0)
         {
@@ -67,6 +77,10 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
         public List<Dialog> Actions { get; set; } = new List<Dialog>();
 #pragma warning restore CA2227 // Collection properties should be read only
 
+        /// <summary>
+        /// Gets the source.
+        /// </summary>
+        /// <value>Source map value from <see cref="DebugSupport"/>.</value>
         [JsonIgnore]
         public virtual SourceRange Source => DebugSupport.SourceMap.TryGetValue(this, out var range) ? range : null;
 
@@ -91,6 +105,10 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
         [JsonIgnore]
         public string Id { get; set; }
 
+        /// <summary>
+        /// Gets the action scope.
+        /// </summary>
+        /// <value>The scope obtained from the action.</value>
         protected ActionScope ActionScope
         {
             get
@@ -105,78 +123,25 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
         }
 
         /// <summary>
-        /// Get the expression for this rule by calling GatherConstraints().
+        /// Get the cached expression for this condition.
         /// </summary>
-        /// <returns>Expression which will be cached and used to evaluate this rule.</returns>
+        /// <remarks>
+        /// This method calls protected <seealso cref="CreateExpression"/> method to create the expression which is cached.
+        /// Child classes should override CreateExpression to add constraints.
+        /// This method should not have been virtual but is left virtual to maintain backward compatibility. If
+        /// you override this method you should return a cached Expression because this method is called frequenetly.
+        /// </remarks>
+        /// <returns>Cached Expression used to evaluate this rule.</returns>
         public virtual Expression GetExpression()
         {
-            lock (this.extraConstraints)
+            if (this.fullConstraint == null)
             {
-                if (this.fullConstraint == null)
+                lock (this.extraConstraints)
                 {
-                    var allExpressions = new List<Expression>();
-
-                    if (this.Condition != null)
+                    // if fullConstraint is null then we need to calculate the complete constraint and cache it.
+                    if (this.fullConstraint == null)
                     {
-                        allExpressions.Add(this.Condition.ToExpression());
-                    }
-
-                    if (this.extraConstraints.Any())
-                    {
-                        allExpressions.AddRange(this.extraConstraints);
-                    }
-
-                    if (allExpressions.Any())
-                    {
-                        this.fullConstraint = Expression.AndExpression(allExpressions.ToArray());
-                    }
-                    else
-                    {
-                        this.fullConstraint = Expression.ConstantExpression(true);
-                    }
-
-                    if (RunOnce)
-                    {
-                        this.fullConstraint = Expression.AndExpression(
-                            this.fullConstraint,
-                            new Expression(
-                                Expression.Lookup(ExpressionType.Ignore),
-                                new Expression(new ExpressionEvaluator(
-                                    $"runOnce{Id}",
-                                    (expression, os, _) =>
-                                    {
-                                        var basePath = $"{AdaptiveDialog.ConditionTracker}.{Id}.";
-                                        var changed = false;
-
-                                        if (os.TryGetValue(basePath + "lastRun", out object val))
-                                        {
-                                            uint lastRun = ObjectPath.MapValueTo<uint>(val);
-
-                                            if (os.TryGetValue(basePath + "paths", out val))
-                                            {
-                                                string[] paths = ObjectPath.MapValueTo<string[]>(val);
-                                                if (paths != null)
-                                                {
-                                                    foreach (var path in paths)
-                                                    {
-                                                        if (os.TryGetValue($"dialog._tracker.paths.{path}", out val))
-                                                        {
-                                                            uint current = ObjectPath.MapValueTo<uint>(val);
-                                                            if (current > lastRun)
-                                                            {
-                                                                changed = true;
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        return (changed, null);
-                                    },
-                                    ReturnType.Boolean,
-                                    FunctionUtils.ValidateUnary))));
+                        this.fullConstraint = CreateExpression();
                     }
                 }
             }
@@ -201,7 +166,28 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
         }
 
         /// <summary>
-        /// Add external condition to the OnCondition (mostly used by external OnConditionSet to apply external constraints to OnCondition).
+        /// Add external condition to the OnCondition.
+        /// </summary>
+        /// <remarks>Child classes should use this to add to the base class condition.</remarks>
+        /// <param name="condition">External constraint to add, it will be AND'ed to all other constraints.</param>
+        public void AddExternalCondition(Expression condition)
+        {
+            try
+            {
+                lock (this.extraConstraints)
+                {
+                    this.extraConstraints.Add(condition);
+                    this.fullConstraint = CreateExpression();
+                }
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"Invalid constraint expression: {this.Condition}, {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Add external condition to the OnCondition.
         /// </summary>
         /// <param name="condition">External constraint to add, it will be AND'ed to all other constraints.</param>
         public void AddExternalCondition(string condition)
@@ -218,7 +204,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
                 }
                 catch (Exception e)
                 {
-                    throw new Exception($"Invalid constraint expression: {this.Condition}, {e.Message}");
+                    throw new InvalidOperationException($"Invalid constraint expression: {this.Condition}, {e.Message}");
                 }
             }
         }
@@ -251,11 +237,94 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
             return $"{this.GetType().Name}()";
         }
 
+        /// <summary>
+        /// Enumerates child dialog dependencies so they can be added to the containers dialog set.
+        /// </summary>
+        /// <returns>dialog enumeration.</returns>
         public virtual IEnumerable<Dialog> GetDependencies()
         {
             yield return this.ActionScope;
         }
 
+        /// <summary>
+        /// Create the expression for this condition.
+        /// </summary>
+        /// <remarks>
+        /// Override this in base classes to create the expression for this trigger.
+        /// </remarks>
+        /// <returns>Expression used to evaluate this rule. </returns>
+        protected virtual Expression CreateExpression()
+        {
+            var allExpressions = new List<Expression>();
+
+            if (this.Condition != null)
+            {
+                allExpressions.Add(this.Condition.ToExpression());
+            }
+
+            if (this.extraConstraints.Any())
+            {
+                allExpressions.AddRange(this.extraConstraints);
+            }
+
+            if (RunOnce)
+            {
+                allExpressions.Add(new Expression(
+                        Expression.Lookup(ExpressionType.Ignore),
+                        new Expression(new ExpressionEvaluator(
+                            $"runOnce{Id}",
+                            (expression, os, _) =>
+                            {
+                                var basePath = $"{AdaptiveDialog.ConditionTracker}.{Id}.";
+                                var changed = false;
+
+                                if (os.TryGetValue(basePath + "lastRun", out object val))
+                                {
+                                    uint lastRun = ObjectPath.MapValueTo<uint>(val);
+
+                                    if (os.TryGetValue(basePath + "paths", out val))
+                                    {
+                                        string[] paths = ObjectPath.MapValueTo<string[]>(val);
+                                        if (paths != null)
+                                        {
+                                            foreach (var path in paths)
+                                            {
+                                                if (os.TryGetValue($"dialog._tracker.paths.{path}", out val))
+                                                {
+                                                    uint current = ObjectPath.MapValueTo<uint>(val);
+                                                    if (current > lastRun)
+                                                    {
+                                                        changed = true;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                return (changed, null);
+                            },
+                            ReturnType.Boolean,
+                            FunctionUtils.ValidateUnary))));
+            }
+
+            if (allExpressions.Any())
+            {
+                return Expression.AndExpression(allExpressions.ToArray());
+            }
+            else
+            {
+                return Expression.ConstantExpression(true);
+            }
+        }
+
+        /// <summary>
+        /// Called when a change list is created.
+        /// </summary>
+        /// <param name="actionContext">Context to use for evaluation.</param>
+        /// <param name="dialogOptions">Optional, object with dialog options.</param>
+        /// <returns>An <see cref="ActionChangeList"/> with the list of actions.</returns>
         protected virtual ActionChangeList OnCreateChangeList(ActionContext actionContext, object dialogOptions = null)
         {
             var changeList = new ActionChangeList()
@@ -272,6 +341,11 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Conditions
             return changeList;
         }
 
+        /// <summary>
+        /// Registers the source location.
+        /// </summary>
+        /// <param name="path">Path to source file.</param>
+        /// <param name="lineNumber">Line number in source file.</param>
         protected void RegisterSourceLocation(string path, int lineNumber)
         {
             if (path != null)

@@ -1,5 +1,9 @@
-﻿using System.Collections.Generic;
+﻿// Licensed under the MIT License.
+// Copyright (c) Microsoft Corporation. All rights reserved.
+
+using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Bot.Schema;
@@ -17,10 +21,26 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Recognizers
     {
         private static JsonSerializer serializer = new JsonSerializer() { ContractResolver = new CamelCasePropertyNamesContractResolver() };
 
-        public TextEntityRecognizer()
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TextEntityRecognizer"/> class.
+        /// </summary>
+        /// <param name="callerPath">Optional, source file full path.</param>
+        /// <param name="callerLine">Optional, line number in source file.</param>
+        [JsonConstructor]
+        public TextEntityRecognizer([CallerFilePath] string callerPath = "", [CallerLineNumber] int callerLine = 0)
+            : base(callerPath, callerLine)
         {
         }
 
+        /// <summary>
+        /// Recognizes entities from an <see cref="Entity"/> list.
+        /// </summary>
+        /// <param name="dialogContext">The <see cref="DialogContext"/> for the current turn of conversation.</param>
+        /// <param name="text">Text to recognize.</param>
+        /// <param name="locale">Locale to use.</param>
+        /// <param name="entities">The enumerated <see cref="Entity"/> to be recognized.</param>
+        /// <param name="cancellationToken">Optional, the <see cref="CancellationToken"/> from the task.</param>
+        /// <returns>Recognized <see cref="Entity"/> list.</returns>
         public override Task<IEnumerable<Entity>> RecognizeEntitiesAsync(DialogContext dialogContext, string text, string locale, IEnumerable<Entity> entities, CancellationToken cancellationToken = default)
         {
             List<Entity> newEntities = new List<Entity>();
@@ -34,7 +54,11 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Recognizers
                 {
                     var newEntity = JObject.FromObject(result, serializer).ToObject<Entity>();
                     newEntity.Type = result.TypeName;
-                    newEntity.Properties.Remove("TypeName");
+                    newEntity.Properties.Remove("typeName");
+
+                    // the text recognizer libraries return models with End => array inclusive endIndex.  We want end to be (end-start) = length, 
+                    // length = endIndex - startIndex
+                    newEntity.Properties["end"] = (int)newEntity.Properties["end"] + 1;
                     newEntities.Add(newEntity);
                 }
             }
@@ -42,6 +66,12 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Recognizers
             return Task.FromResult<IEnumerable<Entity>>(newEntities);
         }
 
+        /// <summary>
+        /// Text recognizing implementation.
+        /// </summary>
+        /// <param name="text">Text to recognize.</param>
+        /// <param name="culture"><see cref="Culture"/> to use.</param>
+        /// <returns>The recognized <see cref="ModelResult"/> list.</returns>
         protected abstract List<ModelResult> Recognize(string text, string culture);
     }
 }

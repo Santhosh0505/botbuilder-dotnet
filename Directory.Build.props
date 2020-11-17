@@ -1,12 +1,16 @@
 <Project>
   
   <PropertyGroup>
-    <LocalPackageVersion>4.10.0-local</LocalPackageVersion>
+    <LocalPackageVersion>4.11.0-local</LocalPackageVersion>
   </PropertyGroup>
 
   <PropertyGroup>
     <PackageOutputPath>$(MSBuildThisFileDirectory)outputpackages</PackageOutputPath>
   </PropertyGroup>
+
+  <Target Name="CleanOutputpackagesDir" AfterTargets="Clean">
+    <RemoveDir Directories="$(MSBuildThisFileDirectory)outputpackages" />
+  </Target>
 
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
@@ -37,9 +41,19 @@
     <SignAssembly>true</SignAssembly>
     <DelaySign>true</DelaySign>
   </PropertyGroup>
+  
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <AssemblyOriginatorKeyFile>$(SolutionDir)\build\35MSSharedLib1024.snk</AssemblyOriginatorKeyFile>
+    <SignAssembly>true</SignAssembly>
+    <DelaySign>true</DelaySign>
+  </PropertyGroup>
 
   <PropertyGroup Condition="'$(SignAssembly)'=='True' ">
     <DefineConstants>SIGNASSEMBLY</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TF_BUILD)' != '' ">
+    <DefineConstants>$(DefineConstants);AUTOMATEDBUILD</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup>

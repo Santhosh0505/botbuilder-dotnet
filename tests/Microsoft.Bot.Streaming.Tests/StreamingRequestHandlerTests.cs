@@ -10,7 +10,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
-using Microsoft.Bot.Connector.Authentication;
 using Microsoft.Bot.Schema;
 using Microsoft.Bot.Streaming;
 using Microsoft.Bot.Streaming.Payloads;
@@ -22,16 +21,32 @@ namespace Microsoft.Bot.Builder.Streaming.Tests
 {
     public class StreamingRequestHandlerTests
     {
-        [Fact]
-        public void CanBeConstructedWithANamedPipe()
+        public static IEnumerable<object[]> GetSuccessfulConstructorTestData(int scenario)
+        {
+            var testData = new List<object[]>
+            {
+                new object[] { Guid.NewGuid().ToString(), null },
+                new object[] { Guid.NewGuid().ToString(), "audience" },
+                new object[] { new FauxSock(), null },
+                new object[] { new FauxSock(), "audience" }
+            };
+            
+            return new List<object[]> { testData[scenario] };
+        }
+
+        [Theory]
+        [MemberData(nameof(GetSuccessfulConstructorTestData), parameters: 0)]
+        [MemberData(nameof(GetSuccessfulConstructorTestData), parameters: 1)]
+        public void CanBeConstructedWithANamedPipe(string namedPipe, string audience)
         {
             // Arrange
 
             // Act
-            var handler = new StreamingRequestHandler(new MockBot(), new BotFrameworkHttpAdapter(), Guid.NewGuid().ToString());
+            var handler = new StreamingRequestHandler(new MockBot(), new BotFrameworkHttpAdapter(), namedPipe, audience);
 
             // Assert
             Assert.NotNull(handler);
+            Assert.Equal(audience, handler.Audience);
         }
 
         [Fact]
@@ -74,16 +89,19 @@ namespace Microsoft.Bot.Builder.Streaming.Tests
             Assert.IsType<ArgumentNullException>(result);
         }
 
-        [Fact]
-        public void CanBeConstructedWithAWebSocket()
+        [Theory]
+        [MemberData(nameof(GetSuccessfulConstructorTestData), parameters: 2)]
+        [MemberData(nameof(GetSuccessfulConstructorTestData), parameters: 3)]
+        public void CanBeConstructedWithAWebSocket(FauxSock socket, string audience)
         {
             // Arrange 
 
             // Act
-            var handler = new StreamingRequestHandler(new MockBot(), new BotFrameworkHttpAdapter(), new FauxSock());
+            var handler = new StreamingRequestHandler(new MockBot(), new BotFrameworkHttpAdapter(), socket, audience);
 
             // Assert
             Assert.NotNull(handler);
+            Assert.Equal(audience, handler.Audience);
         }
 
         [Fact]
@@ -129,6 +147,28 @@ namespace Microsoft.Bot.Builder.Streaming.Tests
             // Arrange
             var handler = new StreamingRequestHandler(new MockBot(), new BotFrameworkHttpAdapter(), Guid.NewGuid().ToString());
             ReceiveRequest testRequest = null;
+
+            // Act
+            var response = await handler.ProcessRequestAsync(testRequest);
+
+            // Assert
+            Assert.Equal(400, response.StatusCode);
+        }
+
+        [Fact]
+        public async void DoesNotThrowExceptionIfReceiveRequestHasNoActivity()
+        {
+            // Arrange
+            var handler = new StreamingRequestHandler(new MockBot(), new BotFrameworkHttpAdapter(), Guid.NewGuid().ToString());
+            
+            var payload = new MemoryStream();
+            var fakeContentStreamId = Guid.NewGuid();
+            var fakeContentStream = new FakeContentStream(fakeContentStreamId, "application/json", payload);
+            var testRequest = new ReceiveRequest
+            {
+                Verb = "POST",
+            };
+            testRequest.Streams.Add(fakeContentStream);
 
             // Act
             var response = await handler.ProcessRequestAsync(testRequest);
@@ -219,7 +259,7 @@ namespace Microsoft.Bot.Builder.Streaming.Tests
             // Arrange
             var handler = new StreamingRequestHandler(new MockBot(), new BotFrameworkHttpAdapter(), Guid.NewGuid().ToString());
             var conversationId = Guid.NewGuid().ToString();
-            var serviceUrl = "urn:FakeName:fakeProtocol://fakePath";
+            const string serviceUrl = "urn:FakeName:fakeProtocol://fakePath";
             var membersAdded = new List<ChannelAccount>();
             var member = new ChannelAccount
             {
@@ -284,32 +324,8 @@ namespace Microsoft.Bot.Builder.Streaming.Tests
             // Assert
             Assert.Matches(expectation, response.Streams[0].Content.ReadAsStringAsync().Result);
         }
-
-        private class MessageBot : IBot
-        {
-            public async Task OnTurnAsync(ITurnContext turnContext, CancellationToken cancellationToken = default) => await turnContext.SendActivityAsync(MessageFactory.Text("do.not.go.gentle.into.that.good.night"));
-        }
-
-        private class FakeContentStream : IContentStream
-        {
-            public FakeContentStream(Guid id, string contentType, Stream stream)
-            {
-                Id = id;
-                ContentType = contentType;
-                Stream = stream;
-                Length = int.Parse(stream.Length.ToString());
-            }
-
-            public Guid Id { get; set; }
-
-            public string ContentType { get; set; }
-
-            public int? Length { get; set; }
-
-            public Stream Stream { get; set; }
-        }
-
-        private class FauxSock : WebSocket
+        
+        public class FauxSock : WebSocket
         {
             public override WebSocketCloseStatus? CloseStatus => throw new NotImplementedException();
 
@@ -336,7 +352,6 @@ namespace Microsoft.Bot.Builder.Streaming.Tests
 
             public override void Dispose()
             {
-                throw new NotImplementedException();
             }
 
             public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
@@ -348,6 +363,30 @@ namespace Microsoft.Bot.Builder.Streaming.Tests
             {
                 throw new NotImplementedException();
             }
+        }
+
+        private class MessageBot : IBot
+        {
+            public async Task OnTurnAsync(ITurnContext turnContext, CancellationToken cancellationToken = default) => await turnContext.SendActivityAsync(MessageFactory.Text("do.not.go.gentle.into.that.good.night"));
+        }
+
+        private class FakeContentStream : IContentStream
+        {
+            public FakeContentStream(Guid id, string contentType, Stream stream)
+            {
+                Id = id;
+                ContentType = contentType;
+                Stream = stream;
+                Length = int.Parse(stream.Length.ToString());
+            }
+
+            public Guid Id { get; set; }
+
+            public string ContentType { get; set; }
+
+            public int? Length { get; set; }
+
+            public Stream Stream { get; set; }
         }
     }
 }

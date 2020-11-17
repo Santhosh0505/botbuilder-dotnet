@@ -67,6 +67,10 @@ COLON: ':';
 
 ARROW: '=>';
 
+NULL_COALESCE: '??';
+
+QUESTION_MARK: '?';
+
 NUMBER : DIGIT + ( '.' DIGIT +)? ;
 
 WHITESPACE : (' '|'\t'|'\ufeff'|'\u00a0') {ignoreWS}? -> skip;
@@ -85,8 +89,8 @@ STRING_INTERPOLATION_END : '`' {ignoreWS = true;} -> type(STRING_INTERPOLATION_S
 
 TEMPLATE : '$' '{' (STRING | OBJECT_DEFINITION | ~[\r\n{}'"`])+ '}';
 
-ESCAPE_CHARACTER : '\\' ~[\r\n]?;
+ESCAPE_CHARACTER : '\\' [`$];
 
-TEXT_CONTENT :  ~[\r\n];
+TEXT_CONTENT : . ;
 
 

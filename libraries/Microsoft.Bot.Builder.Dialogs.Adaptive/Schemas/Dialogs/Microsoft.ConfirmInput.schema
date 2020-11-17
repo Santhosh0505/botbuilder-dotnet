@@ -47,7 +47,7 @@
             ]
         },
         "choiceOptions": {
-            "title": "Choice Options",
+            "title": "Choice options",
             "description": "Choice Options or expression which provides Choice Options to control display choices to the user.",
             "oneOf": [
                 {
@@ -137,7 +137,7 @@
                                     "description": "Value to return when this choice is selected."
                                 },
                                 "action": {
-                                    "$ref": "https://raw.githubusercontent.com/microsoft/botframework-sdk/master/schemas/protocol/botframework.json#/definitions/CardAction",
+                                    "$ref": "https://schemas.botframework.com/schemas/protocol/botframework.json#/definitions/CardAction",
                                     "title": "Action",
                                     "description": "Card action for the choice."
                                 },

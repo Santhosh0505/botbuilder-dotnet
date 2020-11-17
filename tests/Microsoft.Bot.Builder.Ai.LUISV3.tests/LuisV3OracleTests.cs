@@ -43,7 +43,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
         [Fact]
         public void LuisRecognizer_Timeout()
         {
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var expectedTimeout = 300;
             var optionsWithTimeout = new LuisRecognizerOptions()
             {
@@ -130,65 +130,6 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             return new TurnContext(testAdapter, activity);
         }
 
-        // To create a file to test:
-        // 1) Create a <name>.json file with an object { text:<query> } in it.
-        // 2) Run this test which will fail and generate a <name>.json.new file.
-        // 3) Check the .new file and if correct, replace the original .json file with it.
-        // The version parameter controls where in the expected json the luisResult is put.  This allows multiple endpoint responses like from
-        // LUIS V2 and V3 endpoints.  You should run V3 first since it sometimes adds more information that V2.
-        // NOTE: The same oracle files are shared between Luis and LuisPreview in order to ensure the mapping is the same.
-        public async Task TestJson<T>(string file, ITurnContext turnContext = null)
-            where T : IRecognizerConvert, new()
-        {
-            GetEnvironmentVars();
-            var version = "v3";
-            var expectedPath = GetFilePath(file);
-            JObject oracle;
-            using (var expectedJsonReader = new JsonTextReader(new StreamReader(expectedPath)))
-            {
-                oracle = (JObject)await JToken.ReadFromAsync(expectedJsonReader);
-            }
-
-            if (oracle[version] == null)
-            {
-                oracle[version] = new JObject();
-            }
-
-            var oldResponse = oracle[version].DeepClone();
-            var newPath = expectedPath + ".new";
-            var query = oracle["text"].ToString();
-            var context = turnContext ?? GetContext(query);
-            var response = oracle[version];
-            var mockResponse = new MemoryStream(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response?["response"])));
-            var mockHttp = GetMockHttpClientHandlerObject((string)oracle["text"], mockResponse);
-            var oracleOptions = response["options"];
-            var options = (oracleOptions == null || oracleOptions.Type == JTokenType.Null)
-            #pragma warning disable CS0612 // Type or member is obsolete
-                ? new LuisPredictionOptions { IncludeAllIntents = true, IncludeInstanceData = true, IncludeAPIResults = true }
-            #pragma warning restore CS0612 // Type or member is obsolete
-                    : oracleOptions.ToObject<LuisPredictionOptions>();
-            var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
-            response["options"] = (JObject)JsonConvert.DeserializeObject(JsonConvert.SerializeObject(options, settings));
-            var luisRecognizer = GetLuisRecognizer(mockHttp, options);
-            var typedResult = await luisRecognizer.RecognizeAsync<T>(context, CancellationToken.None);
-            var typedJson = Utils.Json(typedResult, version, oracle);
-
-            // Threshold is 0.0 so when hitting endpoint get exact and when mocking isn't needed.
-            if (!Utils.WithinDelta(oracle, typedJson, 0.0) && !JToken.DeepEquals(typedJson[version], oldResponse))
-            {
-                using (var writer = new StreamWriter(newPath))
-                {
-                    writer.Write(typedJson);
-                }
-
-                Assert.Equal(newPath, expectedPath);
-            }
-            else
-            {
-                File.Delete(expectedPath + ".new");
-            }
-        }
-
         [Fact]
         public async Task TraceActivity()
         {
@@ -271,8 +212,10 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
         public async Task Minimal() => await TestJson<RecognizerResult>("Minimal.json");
 
         // TODO: This is disabled until the bug requiring instance data for geo is fixed.
-        // [Fact]
+        //[Fact]
+#pragma warning disable xUnit1013 // Public method should be marked as test
         public async Task MinimalWithGeo() => await TestJson<RecognizerResult>("MinimalWithGeo.json");
+#pragma warning restore xUnit1013 // Public method should be marked as test
 
         [Fact]
         public async Task PrebuiltDomains() => await TestJson<RecognizerResult>("Prebuilt.json");
@@ -365,7 +308,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var fieldInfo = typeof(LuisRecognizer).GetField("_application", BindingFlags.NonPublic | BindingFlags.Instance);
 
             // Act
@@ -384,7 +327,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var clientHandler = new EmptyLuisResponseClientHandler();
             var luisApp = new LuisApplication(endpoint);
             var telemetryClient = new Mock<IBotTelemetryClient>();
@@ -437,7 +380,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var clientHandler = new EmptyLuisResponseClientHandler();
             var luisApp = new LuisApplication(endpoint);
             var telemetryClient = new Mock<IBotTelemetryClient>();
@@ -484,7 +427,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var clientHandler = new EmptyLuisResponseClientHandler();
             var luisApp = new LuisApplication(endpoint);
             var telemetryClient = new Mock<IBotTelemetryClient>();
@@ -531,7 +474,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var clientHandler = new EmptyLuisResponseClientHandler();
             var luisApp = new LuisApplication(endpoint);
             var telemetryClient = new Mock<IBotTelemetryClient>();
@@ -583,7 +526,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var clientHandler = new EmptyLuisResponseClientHandler();
             var luisApp = new LuisApplication(endpoint);
             var telemetryClient = new Mock<IBotTelemetryClient>();
@@ -646,7 +589,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var clientHandler = new EmptyLuisResponseClientHandler();
             var luisApp = new LuisApplication(endpoint);
             var telemetryClient = new Mock<IBotTelemetryClient>();
@@ -690,7 +633,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var clientHandler = new EmptyLuisResponseClientHandler();
             var luisApp = new LuisApplication(endpoint);
             var telemetryClient = new Mock<IBotTelemetryClient>();
@@ -734,7 +677,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             // Arrange
             // Note this is NOT a real LUIS application ID nor a real LUIS subscription-key
             // theses are GUIDs edited to look right to the parsing and validation code.
-            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/v3.0-preview/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
+            var endpoint = "https://westus.api.cognitive.microsoft.com/luis/prediction/v3.0/apps/b31aeaf3-3511-495b-a07f-571fc873214b/slots/production/predict?verbose=true&timezoneOffset=-360&subscription-key=048ec46dc58e495482b0c447cfdbd291&q=";
             var clientHandler = new EmptyLuisResponseClientHandler();
             var luisApp = new LuisApplication(endpoint);
             var telemetryClient = new Mock<IBotTelemetryClient>();
@@ -791,6 +734,65 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             Assert.Equal(1.0001, ((Dictionary<string, double>)telemetryClient.Invocations[0].Arguments[2])["luis"]);
         }
 
+        // To create a file to test:
+        // 1) Create a <name>.json file with an object { text:<query> } in it.
+        // 2) Run this test which will fail and generate a <name>.json.new file.
+        // 3) Check the .new file and if correct, replace the original .json file with it.
+        // The version parameter controls where in the expected json the luisResult is put.  This allows multiple endpoint responses like from
+        // LUIS V2 and V3 endpoints.  You should run V3 first since it sometimes adds more information that V2.
+        // NOTE: The same oracle files are shared between Luis and LuisPreview in order to ensure the mapping is the same.
+        private async Task TestJson<T>(string file, ITurnContext turnContext = null)
+            where T : IRecognizerConvert, new()
+        {
+            GetEnvironmentVars();
+            var version = "v3";
+            var expectedPath = GetFilePath(file);
+            JObject oracle;
+            using (var expectedJsonReader = new JsonTextReader(new StreamReader(expectedPath)))
+            {
+                oracle = (JObject)await JToken.ReadFromAsync(expectedJsonReader);
+            }
+
+            if (oracle[version] == null)
+            {
+                oracle[version] = new JObject();
+            }
+
+            var oldResponse = oracle[version].DeepClone();
+            var newPath = expectedPath + ".new";
+            var query = oracle["text"].ToString();
+            var context = turnContext ?? GetContext(query);
+            var response = oracle[version];
+            var mockResponse = new MemoryStream(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(response?["response"])));
+            var mockHttp = GetMockHttpClientHandlerObject((string)oracle["text"], mockResponse);
+            var oracleOptions = response["options"];
+            var options = (oracleOptions == null || oracleOptions.Type == JTokenType.Null)
+#pragma warning disable CS0612 // Type or member is obsolete
+                ? new LuisPredictionOptions { IncludeAllIntents = true, IncludeInstanceData = true, IncludeAPIResults = true }
+#pragma warning restore CS0612 // Type or member is obsolete
+                    : oracleOptions.ToObject<LuisPredictionOptions>();
+            var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+            response["options"] = (JObject)JsonConvert.DeserializeObject(JsonConvert.SerializeObject(options, settings));
+            var luisRecognizer = GetLuisRecognizer(mockHttp, options);
+            var typedResult = await luisRecognizer.RecognizeAsync<T>(context, CancellationToken.None);
+            var typedJson = Utils.Json(typedResult, version, oracle);
+
+            // Threshold is 0.0 so when hitting endpoint get exact and when mocking isn't needed.
+            if (!Utils.WithinDelta(oracle, typedJson, Mock ? 0.0 : 0.01) && !JToken.DeepEquals(typedJson[version], oldResponse))
+            {
+                using (var writer = new StreamWriter(newPath))
+                {
+                    writer.Write(typedJson);
+                }
+
+                Assert.Equal(newPath, expectedPath);
+            }
+            else
+            {
+                File.Delete(expectedPath + ".new");
+            }
+        }
+
         private IRecognizer GetLuisRecognizer(MockedHttpClientHandler httpClientHandler, LuisPredictionOptions options = null)
         {
             var luisApp = new LuisApplication(AppId, Key, Endpoint);
@@ -823,7 +825,7 @@ namespace Microsoft.Bot.Builder.AI.LuisV3.Tests
             return new MockedHttpClientHandler(mockMessageHandler.ToHttpClient());
         }
 
-        private string GetRequestUrl() => $"{Endpoint}/luis/v3.0-preview/apps/{AppId}/*";
+        private string GetRequestUrl() => $"{Endpoint}/luis/prediction/v3.0/apps/{AppId}/*";
 
         private Stream GetResponse(string fileName)
         {

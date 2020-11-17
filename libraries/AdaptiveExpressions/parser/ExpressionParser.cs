@@ -8,7 +8,6 @@ using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
-using AdaptiveExpressions.parser;
 using Antlr4.Runtime;
 using Antlr4.Runtime.Misc;
 using Antlr4.Runtime.Tree;
@@ -114,6 +113,14 @@ namespace AdaptiveExpressions
                 var left = Visit(context.expression(0));
                 var right = Visit(context.expression(1));
                 return MakeExpression(binaryOperationName, left, right);
+            }
+
+            public override Expression VisitTripleOpExp([NotNull] ExpressionAntlrParser.TripleOpExpContext context)
+            {
+                var conditionalExpression = Visit(context.expression(0));
+                var left = Visit(context.expression(1));
+                var right = Visit(context.expression(2));
+                return MakeExpression(ExpressionType.If, conditionalExpression, left, right);
             }
 
             public override Expression VisitFuncInvokeExp([NotNull] ExpressionAntlrParser.FuncInvokeExpContext context)
@@ -249,7 +256,7 @@ namespace AdaptiveExpressions
 
             public override Expression VisitStringInterpolationAtom([NotNull] ExpressionAntlrParser.StringInterpolationAtomContext context)
             {
-                var children = new List<Expression>();
+                var children = new List<Expression>() { string.Empty };
                 foreach (var child in context.stringInterpolation().children)
                 {
                     if (child is ITerminalNode node)
@@ -261,7 +268,7 @@ namespace AdaptiveExpressions
                                 children.Add(Expression.Parse(expressionString, _lookupFunction));
                                 break;
                             case ExpressionAntlrParser.ESCAPE_CHARACTER:
-                                children.Add(Expression.ConstantExpression(EvalEscape(node.GetText().Replace("\\`", "`").Replace("\\$", "$"))));
+                                children.Add(Expression.ConstantExpression(node.GetText().Replace("\\`", "`").Replace("\\$", "$")));
                                 break;
                             default:
                                 break;
@@ -270,8 +277,7 @@ namespace AdaptiveExpressions
                     else
                     {
                         // text content
-                        var text = EvalEscape(child.GetText());
-                        children.Add(Expression.ConstantExpression(text));
+                        children.Add(Expression.ConstantExpression(child.GetText()));
                     }
                 }
 

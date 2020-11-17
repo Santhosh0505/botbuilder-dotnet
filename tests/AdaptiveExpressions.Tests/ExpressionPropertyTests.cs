@@ -63,7 +63,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Tests
             TestWithData(JObject.FromObject(data));
         }
 
-        public void TestWithData(object data)
+        private void TestWithData(object data)
         {
             TestExpressionPropertyWithValue<byte>("ByteNum", 1, data);
             TestExpressionPropertyWithValue<byte>("=ByteNum", 1, data);
@@ -91,7 +91,7 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Tests
             TestExpressionPropertyWithValue<List<string>>("=createArray('a','b','c')", list, data);
         }
 
-        public void TestExpressionPropertyWithValue<T>(string value, T expected, object memory = null)
+        private void TestExpressionPropertyWithValue<T>(string value, T expected, object memory = null)
         {
             var ep = new ExpressionProperty<T>(value);
             var (result, error) = ep.TryGetValue(memory ?? new object());
@@ -105,13 +105,6 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Tests
             }
 
             Assert.Null(error);
-        }
-
-        public void TestErrorExpression<T>(string value, object memory = null)
-        {
-            var ep = new ExpressionProperty<T>(value);
-            var (result, error) = ep.TryGetValue(memory ?? new object());
-            Assert.NotNull(error);
         }
 
         [Fact]
@@ -372,6 +365,13 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Tests
             (result, error) = str.TryGetValue(data);
             Assert.Equal("c:\test\test\test", result);
             Assert.Null(error);
+
+            // test backtick in stringExpression
+            str = new StringExpression("test `name");
+            Assert.Equal("test `name", str.TryGetValue(data).Value);
+
+            str = new StringExpression("test //`name");
+            Assert.Equal("test //`name", str.TryGetValue(data).Value);
         }
 
         [Fact]
@@ -424,6 +424,17 @@ namespace Microsoft.Bot.Builder.Dialogs.Adaptive.Tests
             val = new ValueExpression("c:\test\test\test");
             (result, error) = val.TryGetValue(data);
             Assert.Equal("c:\test\test\test", result);
+            Assert.Null(error);
+
+            // test backtick in valueExpression
+            val = new ValueExpression("name `backtick");
+            (result, error) = val.TryGetValue(data);
+            Assert.Equal("name `backtick", result);
+            Assert.Null(error);
+
+            val = new ValueExpression("name \\`backtick");
+            (result, error) = val.TryGetValue(data);
+            Assert.Equal("name \\`backtick", result);
             Assert.Null(error);
         }
 
